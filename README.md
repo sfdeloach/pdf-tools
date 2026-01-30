@@ -2,7 +2,8 @@
 
 ```bash
 python pdf_ocr.py [-h] [-o OUTPUT] [--dpi DPI] pdf_file
-python combine.py <input_dir> [<output_dir>]
+python combine.py <input_dir> [<output_dir>]                # without page numbers
+python combine.py <input_dir> [<output_dir>] --page-numbers # with page numbers
 python rasterize.py <input_dir> [<output_dir>] [--jpeg]
 python securitize.py [-h] [--watermark WATERMARK] [--password PASSWORD] [--footer FOOTER] [--keywords KEYWORDS] input_file output_file
 ```
