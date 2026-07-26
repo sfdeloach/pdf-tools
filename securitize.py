@@ -1,5 +1,7 @@
 import argparse
+import sys
 from PyPDF2 import PdfReader, PdfWriter, PageObject
+from PyPDF2.generic import NameObject
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.colors import Color
@@ -7,6 +9,11 @@ from io import BytesIO
 
 
 def add_watermark_and_footer(page, watermark_text=None, footer_text=None):
+    # Nothing to overlay: return the page unchanged. Drawing nothing on the
+    # canvas would produce a 0-page overlay PDF, which then fails on pages[0].
+    if not watermark_text and not footer_text:
+        return page
+
     # Create a new PDF with ReportLab for overlay
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=letter)
@@ -52,8 +59,26 @@ def main():
     parser = argparse.ArgumentParser(
         description="Apply security features to a PDF file."
     )
-    parser.add_argument("input_file", help="Path to the input PDF file")
-    parser.add_argument("output_file", help="Path to the output PDF file")
+    parser.add_argument(
+        "input_file",
+        nargs="?",
+        help="Path to the input PDF file (omit when using --stdin)",
+    )
+    parser.add_argument(
+        "output_file",
+        nargs="?",
+        help="Path to the output PDF file (omit when using --stdout)",
+    )
+    parser.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read the input PDF from standard input instead of input_file",
+    )
+    parser.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Write the output PDF to standard output instead of output_file",
+    )
     parser.add_argument(
         "--watermark",
         default=None,
@@ -75,7 +100,28 @@ def main():
 
     args = parser.parse_args()
 
-    reader = PdfReader(args.input_file)
+    # With --stdin the input comes from the stream, so a lone positional is meant
+    # as the OUTPUT path. argparse binds it to input_file (the first positional)
+    # by default, so re-map it here to keep the CLI natural.
+    if (
+        args.stdin
+        and not args.stdout
+        and args.output_file is None
+        and args.input_file is not None
+    ):
+        args.input_file, args.output_file = None, args.input_file
+
+    # Validate that a source and destination are specified (path or stream).
+    if not args.stdin and not args.input_file:
+        parser.error("input_file is required unless --stdin is used")
+    if not args.stdout and not args.output_file:
+        parser.error("output_file is required unless --stdout is used")
+
+    # Resolve the input: a stream from stdin or a file path.
+    if args.stdin:
+        reader = PdfReader(BytesIO(sys.stdin.buffer.read()))
+    else:
+        reader = PdfReader(args.input_file)
     writer = PdfWriter()
 
     for page_num in range(len(reader.pages)):
@@ -83,14 +129,30 @@ def main():
         modified_page = add_watermark_and_footer(page, args.watermark, args.footer)
         writer.add_page(modified_page)
 
+    # Strip all inherited metadata so the output is clean.
+    # (a) Clear the document-info dictionary (/Author, /Title, /Subject, ...).
+    writer.add_metadata({})
+    # (b) Defensively remove any page-level XMP / private metadata streams.
+    #     Catalog-level XMP is already dropped because we build a fresh writer
+    #     and copy only pages; this covers the rarer page-level case.
+    for page in writer.pages:
+        for key in ("/Metadata", "/PieceInfo"):
+            if NameObject(key) in page:
+                del page[NameObject(key)]
+
+    # Re-add only the metadata the user explicitly requested.
     if args.keywords:
         writer.add_metadata({"/Keywords": args.keywords})
 
     if args.password:
         writer.encrypt(user_pwd=args.password, owner_pwd=None, use_128bit=True)
 
-    with open(args.output_file, "wb") as output_pdf:
-        writer.write(output_pdf)
+    # Resolve the output: a stream to stdout or a file path.
+    if args.stdout:
+        writer.write(sys.stdout.buffer)
+    else:
+        with open(args.output_file, "wb") as output_pdf:
+            writer.write(output_pdf)
 
 
 if __name__ == "__main__":
