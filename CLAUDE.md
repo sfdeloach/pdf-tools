@@ -76,7 +76,7 @@ Per the README, the recurring release process for `securitize.py`:
    request number), `--keywords`, and the output filename. Example:
 
 ```bash
-python securitize.py --footer 0007 --keywords "prepared for Jackie Husebo" \
+python securitize.py --footer 0007 --keywords "prepared for John Doe" \
   --password m2gZai2x "2025 detailed financials report.pdf" \
   ./releases/2025_0007_details.pdf
 ```
